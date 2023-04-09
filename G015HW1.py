@@ -176,9 +176,5 @@ def main():
 	print(f'Number of triangles = ', tfinal)
 	print(f'Running time = ', int(((finish_time - start_time)/R)*1000), "ms")
 
-              
-
-
-
 if __name__ == "__main__":
 	main()
