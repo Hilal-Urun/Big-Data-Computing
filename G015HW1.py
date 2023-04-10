@@ -100,22 +100,18 @@ def MR_ApproxTCwithNodeColors(edges, C):
 	CV = []
 	return triangle_count
 
-def MR_ApproxTCwithSparkPartitions(edges, C):
-    # Round 1
-    edges_partitioned = edges \
-        .map(lambda e: (rand.randint(0, C - 1), e)) \
-        .partitionBy(C) \
-        .cache()
+def MR_ApproxTCwithSparkPartitions(rdd_edges, C):
+    """
+    :param edges: rdd edges
+    :param C: number of partitions
+    :return: an estimate tfinal
+    """
+    # Round 1 : Computing the number of triangles for each partition
+    triangle_counts = rdd_edges.mapPartitions(lambda edges: [CountTriangles(edges)]).collect()
 
-    triangle_counts = edges_partitioned \
-        .map(lambda x: (x[0], [x[1][0], x[1][1]])) \
-        .groupByKey() \
-        .mapValues(lambda x: CountTriangles(x)) \
-        .collect()
-
-    # Round 2
-    final_estimate = C ** 2 * sum([t[1] for t in triangle_counts])
-    return final_estimate
+    # Round 2 : Computing the final estimate of the number of triangles
+    tfinal = C ** 2 * sum(triangle_counts)
+    return tfinal
 
 
 def main():
