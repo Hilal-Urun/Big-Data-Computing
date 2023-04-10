@@ -45,7 +45,7 @@ def MR_ApproxTCwithSparkPartitions(rdd_edges, C):
 
     # Round 2
     # Compute the final estimate of the number of triangles
-    tfinal = C ** 2 * sum([t[1] for t in triangle_counts])
+    tfinal = C ** 2 * sum(triangle_counts)
     return tfinal
 
 
