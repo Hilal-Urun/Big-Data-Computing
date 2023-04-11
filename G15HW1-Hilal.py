@@ -41,11 +41,11 @@ def MR_ApproxTCwithSparkPartitions(rdd_edges, C):
     """
     # Round 1
     # Compute the number of triangles for each partition
-    triangle_counts = rdd_edges.mapPartitions(lambda edges: [CountTriangles(edges)]).collect()
+    triangle_counts = rdd_edges.mapPartitions(lambda partition: [CountTriangles(partition)])
 
     # Round 2
     # Compute the final estimate of the number of triangles
-    tfinal = C ** 2 * sum(triangle_counts)
+    tfinal = C * C * triangle_counts.reduce(lambda x, y: x + y)
     return tfinal
 
 
@@ -66,8 +66,8 @@ def main():
     data_path = sys.argv[2]
     assert os.path.isfile(data_path), "File or folder not found"
     rawData = sc.textFile(data_path)
-    edges = rawData.map(lambda x: tuple(map(int, x.split(','))))
-    edges_rdd = edges.partitionBy(C).cache()
+    edges = rawData.map(lambda line: tuple(map(int, line.split(",")))).sortBy(lambda _: random.random())
+    edges_rdd=edges.repartition(numPartitions=C).cache()
 
     # Call MR_ApproxTCwithSparkPartitions to get an estimate tfinal of the number of triangles in the input graph
     start_time = time.time()
