@@ -1,3 +1,5 @@
+import random
+
 from pyspark import SparkContext, SparkConf
 import sys
 import os
@@ -122,7 +124,7 @@ def main():
     assert len(sys.argv) == 4, "Usage: python G015HW1.py <C> <R> <file_name>"
 
     # SPARK SETUP
-    conf = SparkConf().setAppName('TriangleCountExample')
+    conf = SparkConf().setAppName('TriangleCountExample').setMaster("local[*]")
     sc = SparkContext(conf=conf)
 
     # INPUT READING

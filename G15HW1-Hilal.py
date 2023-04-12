@@ -54,7 +54,7 @@ def main():
     assert len(sys.argv) == 3, "Usage: python G15HW1.py <C> <filename>"
 
     # SPARK SETUP
-    conf = SparkConf().setAppName('TriangleCount')
+    conf = SparkConf().setAppName('TriangleCount').setMaster("local[*]")
     sc = SparkContext(conf=conf)
     # INPUT READING
     # 1. Read number of partitions
