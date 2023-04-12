@@ -98,7 +98,7 @@ def MR_ApproxTCwithNodeColors(edges, C):
     triangle_count = (edges.flatMap(find_edges)  # <-- MAP PHASE (R1)
                       .groupByKey()  # <-- GROUPING
                       .mapValues(CountTriangles)  # <-- REDUCE PHASE (R1)
-                      .map(lambda x: C ** 2 * x[1]).reduce(lambda a, b: a + b))  # <-- (R2)
+                      .map(lambda x: C ** 2 * x[1]).reduce(lambda a, b: a + b))  # <-- (R2) t_final
     CV = [] #to be used in the next rounds
     return triangle_count
 
@@ -111,7 +111,7 @@ def MR_ApproxTCwithSparkPartitions(rdd_edges, C):
     """
     
     triangle_counts = (rdd_edges.mapPartitions(lambda partition: [CountTriangles(partition)]) # <-- REDUCE PHASE (R1) # Compute the number of triangles for each partition
-                        .map(lambda x: C ** 2 * x).reduce(lambda a, b: a + b)) # <-- (R2)
+                        .map(lambda x: C ** 2 * x).reduce(lambda a, b: a + b)) # <-- (R2) t_final
                         
     return triangle_counts
 
