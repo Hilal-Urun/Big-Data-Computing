@@ -96,10 +96,10 @@ def MR_ApproxTCwithNodeColors(edges, C):
     CV = hash(num_vertices, C)  # assign colors to vertices
 
     triangle_count = (edges.flatMap(find_edges)  # <-- MAP PHASE (R1)
-                      .groupByKey()  # <-- SHUFFLE+GROUPING
+                      .groupByKey()  # <-- GROUPING
                       .mapValues(CountTriangles)  # <-- REDUCE PHASE (R1)
-                      .map(lambda x: C ** 2 * x[1]).reduce(lambda a, b: a + b))  # <-- REDUCE PHASE (R2)
-    CV = []
+                      .map(lambda x: C ** 2 * x[1]).reduce(lambda a, b: a + b))  # <-- (R2)
+    CV = [] #to be used in the next rounds
     return triangle_count
 
 
@@ -109,14 +109,11 @@ def MR_ApproxTCwithSparkPartitions(rdd_edges, C):
     :param C: number of partitions
     :return: an estimate tfinal
     """
-    # Round 1
-    # Compute the number of triangles for each partition
-    triangle_counts = rdd_edges.mapPartitions(lambda partition: [CountTriangles(partition)])
-
-    # Round 2
-    # Compute the final estimate of the number of triangles
-    tfinal = C * C * triangle_counts.reduce(lambda x, y: x + y)
-    return tfinal
+    
+    triangle_counts = (rdd_edges.mapPartitions(lambda partition: [CountTriangles(partition)]) # <-- REDUCE PHASE (R1) # Compute the number of triangles for each partition
+                        .map(lambda x: C ** 2 * x).reduce(lambda a, b: a + b)) # <-- (R2)
+                        
+    return triangle_counts
 
 
 def main():
@@ -142,11 +139,11 @@ def main():
     # 3. Read input file and subdivide it into C partitions
     data_path = sys.argv[3]
     assert os.path.isfile(data_path), "File or folder not found"
-    rawData = sc.textFile(data_path)  # not sure to keep minPartition or not ( ,minPartitions=C)
+    rawData = sc.textFile(data_path)  
     # transform it into an RDD of edges
-    edges = rawData.map(lambda line: tuple(map(int, line.split(",")))).sortBy(lambda _: random.random())
-    edges_rdd = edges.repartition(numPartitions=C).cache()
-    # rawData.repartition(numPartitions=C)
+    edges = rawData.map(lambda line: tuple(map(int, line.split(",")))).sortBy(lambda _: random.random()) #shuffle the data
+    edges = edges.repartition(numPartitions=C).cache() #this is also the map phase (R1) of the second algorithm
+
 
     # required prints in the report
     print("Dataset = ", os.path.basename(data_path))
@@ -162,19 +159,19 @@ def main():
     times = 0
     for i in range(R):
         start_time = time.time()
-        node_color_estimates.append(MR_ApproxTCwithNodeColors(edges_rdd, C))
+        node_color_estimates.append(MR_ApproxTCwithNodeColors(edges, C))
         finish_time = time.time()
         times += (finish_time - start_time)
-    print(f'Number of triangles (median over {R} runs) = ', statistics.median(node_color_estimates))
-    print(f'Running time (average over {R} runs) = ', int((times / R) * 1000), "ms")
+    print(f'- Number of triangles (median over {R} runs) = ', statistics.median(node_color_estimates)) # get the median
+    print(f'- Running time (average over {R} runs) = ', int((times / R) * 1000), "ms") # get the average time
 
     # Approximation through Spark partitions
     print("Approximation through Spark partitions")
     start_time = time.time()
-    tfinal = MR_ApproxTCwithSparkPartitions(edges_rdd, C)
+    tfinal = MR_ApproxTCwithSparkPartitions(edges, C)
     finish_time = time.time()
-    print(f'Number of triangles = ', tfinal)
-    print(f'Running time = ', int(((finish_time - start_time) / R) * 1000), "ms")
+    print(f'- Number of triangles = ', tfinal)
+    print(f'- Running time = ', int(((finish_time - start_time) / R) * 1000), "ms")
 
 
 if __name__ == "__main__":
