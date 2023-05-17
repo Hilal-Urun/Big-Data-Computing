@@ -83,7 +83,7 @@ def MR_ApproxTCwithNodeColors(edges, C):
     b = rand.randint(0, p - 1)
 
     def hash(u):
-        return ((((a * u) + b) % p) % C)
+        return (((a * u) + b) % p) % C
 
     def edge_same_color(hash: callable, edge):
         colors = hash(edge[0]), hash(edge[1])
@@ -100,14 +100,26 @@ def MR_ApproxTCwithNodeColors(edges, C):
     return triangle_count.collect()[0][1] * C ** 2
 
 
-def MR_ExactTC(rdd_edges, C):
-    count = ""
-    return count
+def MR_ExactTC(edges, C):
+    p = 8191
+    a = rand.randint(1, p - 1)
+    b = rand.randint(0, p - 1)
+
+    def hash(u):
+        return (((a * u) + b) % p) % C
+
+    exact_triangle_count = (edges.flatMap(
+        lambda edge: [(tuple(sorted((hash(edge[0]), hash(edge[1]), i))), edge) for i in range(C)])  # <-- MAP PHASE (R1)
+                            .groupByKey()  # <-- GROUPING
+                            .flatMap(
+        lambda x: [(x[0], countTriangles2(x[0], x[1], a, b, p, C))])  # <-- REDUCE PHASE (R1)
+                            .reduce(lambda a, b: ('sum', a[1] + b[1])))  # <-- REDUCE PHASE (R2)
+    return exact_triangle_count[1]
 
 
 def main():
     # CHECKING NUMBER OF CMD LINE PARAMETERS
-    assert len(sys.argv) == 4, "Usage: python G015HW1.py <C> <R> <F> <file_name>"
+    assert len(sys.argv) == 5, "Usage: python G015HW2.py <C> <R> <F> <file_name>"
 
     # SPARK SETUP
     conf = SparkConf().setAppName('TriangleCountExample').setMaster("local[*]")
@@ -135,13 +147,13 @@ def main():
     assert os.path.isfile(data_path), "File or folder not found"
     rawData = sc.textFile(data_path)
     # transform it into an RDD of edges
-    # edges = rawData.map(lambda line: tuple(map(int, line.split(",")))).sortBy(
-    #     lambda _: random.random())  # shuffle the data
+    edges = rawData.map(lambda line: tuple(map(int, line.split(","))))
+    edges = edges.partitionBy(32).cache()
     # edges = edges.repartition(numPartitions=C).cache()
-    edges = rawData.map(lambda line: line.split()) \
-        .map(lambda pair: (int(pair[0]), int(pair[1]))) \
-        .partitionBy(32) \
-        .cache()
+    # edges = rawData.map(lambda line: line.split()) \
+    #     .map(lambda pair: (int(pair[0]), int(pair[1]))) \
+    #     .partitionBy(32) \
+    #     .cache()
 
     # required prints in the report
     print("Dataset = ", os.path.basename(data_path))
@@ -150,7 +162,7 @@ def main():
     print("Number of Edges = ", numEdges)
     print("Number of Colors = ", C)
     print("Number of Repetitions = ", R)
-    if F is 0:
+    if F == 0:
         # Approximation through node coloring
         print("Approximation through node coloring")
         node_color_estimates = []
@@ -163,16 +175,16 @@ def main():
         print(f'- Number of triangles (median over {R} runs) = ',
               statistics.median(node_color_estimates))  # get the median
         print(f'- Running time (average over {R} runs) = ', int((times / R) * 1000), "ms")  # get the average time
-    if F is 1:
+    if F == 1:
         # Exact through node coloring
         print("Exact algorithm with node coloring")
         times = 0
         for i in range(R):
             start_time = time.time()
-            exact_triangles_count = MR_ExactTC()
+            exact_triangle_count = MR_ExactTC(edges, C)
             finish_time = time.time()
             times += (finish_time - start_time)
-        print(f'- Number of triangles = ', exact_triangles_count)
+        print(f'- Number of triangles = ', exact_triangle_count)
         print(f'- Running time (average over {R} runs) = ', int((times / R) * 1000), "ms")  # get the average time
 
 
