@@ -1,5 +1,3 @@
-import random
-
 from pyspark import SparkContext, SparkConf
 import sys
 import os
@@ -82,17 +80,17 @@ def MR_ApproxTCwithNodeColors(edges, C):
     a = rand.randint(1, p - 1)
     b = rand.randint(0, p - 1)
 
-    def hash(u):
+    def hash_f(u):
         return (((a * u) + b) % p) % C
 
-    def edge_same_color(hash: callable, edge):
-        colors = hash(edge[0]), hash(edge[1])
+    def edge_same_color(edge):
+        colors = hash_f(edge[0]), hash_f(edge[1])
         if colors[0] == colors[1]:
             return [(colors[0], edge)]
         else:
             return []
 
-    triangle_count = (edges.flatMap(lambda edge: edge_same_color(hash, edge))  # <-- MAP PHASE (R1)
+    triangle_count = (edges.flatMap(lambda edge: edge_same_color(edge))  # <-- MAP PHASE (R1)
                       .groupByKey()  # <-- GROUPING
                       .map(lambda edges: (0, CountTriangles(edges[1])))  # <-- REDUCE PHASE (R1)
                       .reduceByKey(lambda x, y: x + y))  # <-- REDUCE PHASE (R2)
@@ -105,11 +103,12 @@ def MR_ExactTC(edges, C):
     a = rand.randint(1, p - 1)
     b = rand.randint(0, p - 1)
 
-    def hash(u):
+    def hash_f(u):
         return (((a * u) + b) % p) % C
 
     exact_triangle_count = (edges.flatMap(
-        lambda edge: [(tuple(sorted((hash(edge[0]), hash(edge[1]), i))), edge) for i in range(C)])  # <-- MAP PHASE (R1)
+        lambda edge: [(tuple(sorted((hash_f(edge[0]), hash_f(edge[1]), i))), edge) for i in
+                      range(C)])  # <-- MAP PHASE (R1)
                             .groupByKey()  # <-- GROUPING
                             .flatMap(
         lambda x: [(x[0], countTriangles2(x[0], x[1], a, b, p, C))])  # <-- REDUCE PHASE (R1)
@@ -149,16 +148,10 @@ def main():
     # transform it into an RDD of edges
     edges = rawData.map(lambda line: tuple(map(int, line.split(","))))
     edges = edges.partitionBy(32).cache()
-    # edges = edges.repartition(numPartitions=C).cache()
-    # edges = rawData.map(lambda line: line.split()) \
-    #     .map(lambda pair: (int(pair[0]), int(pair[1]))) \
-    #     .partitionBy(32) \
-    #     .cache()
-
     # required prints in the report
     print("Dataset = ", os.path.basename(data_path))
     # SETTING GLOBAL VARIABLES
-    numEdges = edges.count();
+    numEdges = edges.count()
     print("Number of Edges = ", numEdges)
     print("Number of Colors = ", C)
     print("Number of Repetitions = ", R)
@@ -172,21 +165,20 @@ def main():
             node_color_estimates.append(MR_ApproxTCwithNodeColors(edges, C))
             finish_time = time.time()
             times += (finish_time - start_time)
-        print(f'- Number of triangles (median over {R} runs) = ',
+        print(f"- Number of triangles (median over {R} runs) =",
               statistics.median(node_color_estimates))  # get the median
-        print(f'- Running time (average over {R} runs) = ', int((times / R) * 1000), "ms")  # get the average time
-    if F == 1:
+        print(f"- Running time (average over {R} runs) = ", int((times / R) * 1000), "ms")  # get the average time
+        if F == 1:
         # Exact through node coloring
-        print("Exact algorithm with node coloring")
+            print("Exact algorithm with node coloring")
         times = 0
         for i in range(R):
             start_time = time.time()
-            exact_triangle_count = MR_ExactTC(edges, C)
-            finish_time = time.time()
-            times += (finish_time - start_time)
-        print(f'- Number of triangles = ', exact_triangle_count)
-        print(f'- Running time (average over {R} runs) = ', int((times / R) * 1000), "ms")  # get the average time
+        exact_triangle_count = MR_ExactTC(edges, C)
+        finish_time = time.time()
+        times += (finish_time - start_time)
+        print(f"- Number of triangles = ", exact_triangle_count)
+        print(f"- Running time (average over {R} runs) = ", int((times / R) * 1000), "ms")  # get the average time
 
-
-if __name__ == "__main__":
-    main()
+        if __name__ == "__main__":
+            main()
