@@ -107,12 +107,10 @@ def MR_ExactTC(edges, C):
         return (((a * u) + b) % p) % C
 
     exact_triangle_count = (edges.flatMap(
-        lambda edge: [(tuple(sorted((hash_f(edge[0]), hash_f(edge[1]), i))), edge) for i in
-                      range(C)])  # <-- MAP PHASE (R1)
-                            .groupByKey()  # <-- GROUPING
-                            .flatMap(
-        lambda x: [(x[0], countTriangles2(x[0], x[1], a, b, p, C))])  # <-- REDUCE PHASE (R1)
-                            .reduce(lambda a, b: ('sum', a[1] + b[1])))  # <-- REDUCE PHASE (R2)
+        lambda edge: [(tuple(sorted((hash_f(edge[0]), hash_f(edge[1]), i))), edge) for i in range(C)])  # <-- MAP PHASE (R1)
+                        .groupByKey()  # <-- GROUPING
+                        .flatMap(lambda x: [(x[0], countTriangles2(x[0], x[1], a, b, p, C))])  # <-- REDUCE PHASE (R1)
+                        .reduce(lambda a, b: ('sum', a[1] + b[1])))  # <-- REDUCE PHASE (R2)
     return exact_triangle_count[1]
 
 
@@ -168,17 +166,17 @@ def main():
         print(f"- Number of triangles (median over {R} runs) =",
               statistics.median(node_color_estimates))  # get the median
         print(f"- Running time (average over {R} runs) = ", int((times / R) * 1000), "ms")  # get the average time
-        if F == 1:
+    if F == 1:
         # Exact through node coloring
-            print("Exact algorithm with node coloring")
+        print("Exact algorithm with node coloring")
         times = 0
         for i in range(R):
             start_time = time.time()
-        exact_triangle_count = MR_ExactTC(edges, C)
-        finish_time = time.time()
-        times += (finish_time - start_time)
+            exact_triangle_count = MR_ExactTC(edges, C)
+            finish_time = time.time()
+            times += (finish_time - start_time)
         print(f"- Number of triangles = ", exact_triangle_count)
         print(f"- Running time (average over {R} runs) = ", int((times / R) * 1000), "ms")  # get the average time
 
-        if __name__ == "__main__":
-            main()
+if __name__ == "__main__":
+    main()
