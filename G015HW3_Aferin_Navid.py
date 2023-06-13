@@ -1,6 +1,7 @@
 from pyspark import SparkContext, SparkConf
 from pyspark.streaming import StreamingContext
 from pyspark import StorageLevel
+import statistics
 import random as rand
 import numpy as np
 import threading
@@ -9,25 +10,53 @@ import sys
 # After how many items should we stop?
 THRESHOLD = 10000000
 
+def hash_f(u, a, b, W):
+    p = 8191
+    return (((a * u) + b) % p) % W
+
+def hash_g(u, a, b):
+    p = 8191
+    hashed_value = (((a * u) + b) % p) % 2
+    return 1 if hashed_value == 0 else -1
 
 # Operations to perform after receiving an RDD 'batch' at time 'time'
-def process_batch(time, batch):
-
-    def hash_f(u, a, b):
-        p = 8191
-        return (((a * u) + b) % p) % 8
+def process_batch(time, batch, W, left, right):
     
     # We are working on the batch at time `time`.
-    global streamLength, histogram, Counter_table, hash_params
+    global streamLength, streamLength_filtered, histogram, Counter_table, hash_params_f, hash_params_g
     batch_size = batch.count()
     # If we already have enough points (> THRESHOLD), skip this batch.
     if streamLength[0]>=THRESHOLD:
         return
     streamLength[0] += batch_size
+
+    # map 1 to each element and filter according to right and left
+    batch_maped_filtered = batch \
+            .map(lambda a: (int(a), 1)) \
+            .filter(lambda e: (e[0] >= left) and (e[0] <= right))
+    
+    streamLength_filtered[0] += batch_maped_filtered.count()
+
+    items_count = batch_maped_filtered \
+            .reduceByKey(lambda a,  b: a + b) \
+            .collectAsMap()
+    
+    for element, count in items_count.items():
+        #exact count
+        if element not in histogram:
+            histogram[element] = count
+        else:
+            histogram[element] += count
+
+        # Update the counters with the batch
+        for j in range(len(Counter_table)): # for D
+            Counter_table[j][hash_f(element, hash_params_f[j][0], hash_params_f[j][1], W)] += hash_g(element, hash_params_g[j][0], hash_params_g[j][1]) * count #the hash function g (for sign) is defined here
+
+    
     # Update the counters with the batch
-    for xt in batch:
-        for j in range(Counter_table.shape[0]): # for D
-            Counter_table[j, hash_f(xt, hash_params[j][0], hash_params[j][1])] += 1 if hash_f(xt, hash_params[j][0], hash_params[j][1]) % 2 == 0 else -1
+    # for element, count in items_count.items():
+    #     for j in range(Counter_table.shape[0]): # for D
+    #         Counter_table[j, hash_f(element, hash_params[j][0], hash_params[j][1], W)] += (1 if hash_f(element, hash_params[j][0], hash_params[j][1], W) % 2 == 0 else -1) * count #the hash function g (for sign) is defined here
 
     # If we wanted, here we could run some additional code on the global histogram
     if batch_size > 0:
@@ -82,8 +111,6 @@ if __name__ == '__main__':
     # &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
     # INPUT READING
     # &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
-
-    portExp = int(sys.argv[1])
     print("Receiving data from port =", portExp)
     
     
@@ -92,9 +119,11 @@ if __name__ == '__main__':
     # &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
     p = 8191
     streamLength = [0] # Stream length (an array to be passed by reference)
+    streamLength_filtered = [0] # Stream length after cosidering left right (an array to be passed by reference)
     histogram = {} # 
     Counter_table = np.zeros((D, W)) 
-    hash_params = [[rand.randint(1, p - 1), rand.randint(0, p - 1)] for _ in range(D)] #define D hash tables
+    hash_params_f = [[rand.randint(1, p - 1), rand.randint(0, p - 1)] for _ in range(D)] #define D hash tables
+    hash_params_g = [[rand.randint(1, p - 1), rand.randint(0, p - 1)] for _ in range(D)]
     
     
 
@@ -103,7 +132,7 @@ if __name__ == '__main__':
     # For each batch, to the following.
     # BEWARE: the `foreachRDD` method has "at least once semantics", meaning
     # that the same data might be processed multiple times in case of failure.
-    stream.foreachRDD(lambda time, batch: process_batch(time, batch))
+    stream.foreachRDD(lambda time, batch: process_batch(time, batch, W, left, right))
     
     # MANAGING STREAMING SPARK CONTEXT
     print("Starting streaming engine")
@@ -119,8 +148,39 @@ if __name__ == '__main__':
     print("Streaming engine stopped")
 
     # COMPUTE AND PRINT FINAL STATISTICS
-    print("Number of items processed =", streamLength[0])
-    print("Number of distinct items =", len(histogram))
-    largest_item = max(histogram.keys())
-    print("Largest item =", largest_item)
-    
+    print("D = ", D, " W = ", W, " [left,right] = [", left , ", ", right, "] K = ", K, " Port = ", portExp)
+    print("Total number of items = ", streamLength[0])
+    print("Total number of items in [", left, "," ,right, "]"," = ", streamLength_filtered[0])
+    print("Number of distinct items in [", left,"," ,right, "]"," = ", len(histogram))
+
+    # Calculate the K-th largest frequency
+    sorted_frequencies = sorted(histogram.values(), reverse=True)
+    kth_largest_frequency = sorted_frequencies[K - 1]
+
+    # Calculate the average relative error
+    total_relative_error = 0
+    count = 0
+    for element, count_true in histogram.items():
+        if count_true >= kth_largest_frequency:
+            count_estimated = statistics.median(Counter_table[j][hash_f(element, hash_params_f[j][0], hash_params_f[j][1], W)] * hash_g(element, hash_params_g[j][0], hash_params_g[j][1]) for j in range(len(Counter_table)))
+            relative_error = abs(count_true - count_estimated) / count_true
+            total_relative_error += relative_error
+            count += 1
+    average_relative_error = total_relative_error / count
+
+    if K <= 20:
+        # Sort the histogram by true frequencies in descending order
+        sorted_items = sorted(histogram.items(), key=lambda x: x[1], reverse=True)
+        for i in range(K):
+            element, count_true = sorted_items[i]
+            count_estimated = statistics.median(Counter_table[j][hash_f(element, hash_params_f[j][0], hash_params_f[j][1], W)] * hash_g(element, hash_params_g[j][0], hash_params_g[j][1]) for j in range(len(Counter_table)))
+            print("Item : ", element, "Freq = ", count_true, " Est. Freq = ", count_estimated)
+
+    print("Avg err for top ", K, "=", average_relative_error)
+
+    F2_normalized = sum(count ** 2 for count in histogram.values()) / (streamLength_filtered[0] ** 2)
+    counter_estimated = 0
+    for element, count_true in histogram.items():
+        counter_estimated += statistics.median(Counter_table[j][hash_f(element, hash_params_f[j][0], hash_params_f[j][1], W)] * hash_g(element, hash_params_g[j][0], hash_params_g[j][1]) for j in range(len(Counter_table)))**2
+    F2_approx = counter_estimated/(streamLength_filtered[0] ** 2)
+    print("F2", F2_normalized, "F2 Estimate", F2_approx)
